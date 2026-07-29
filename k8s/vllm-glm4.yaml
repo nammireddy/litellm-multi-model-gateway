@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inference-service-gpu
+  namespace: glm-chat
+  labels:
+    app: inference-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inference-service
+  template:
+    metadata:
+      labels:
+        app: inference-service
+    spec:
+      nodeSelector:
+        workload: gpu-inference
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.6.4
+          args:
+            - "--model"
+            - "THUDM/glm-4-9b-chat"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--max-model-len"
+            - "4096"
+            - "--gpu-memory-utilization"
+            - "0.90"
+            - "--trust-remote-code"
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              value: ""  # Add HF token if model is gated
+          resources:
+            requests:
+              cpu: "2"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: "24Gi"
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 5
+      terminationGracePeriodSeconds: 60

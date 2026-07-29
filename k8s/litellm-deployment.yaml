@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: glm-chat
+data:
+  config.yaml: |
+    model_list:
+      - model_name: glm-4
+        litellm_params:
+          model: openai/THUDM/glm-4-9b-chat
+          api_base: http://inference-service:8000/v1
+          api_key: "no-key-needed"
+
+      - model_name: qwen2.5-14b
+        litellm_params:
+          model: openai/Qwen/Qwen2.5-14B-Instruct-AWQ
+          api_base: http://qwen3-service:8000/v1
+          api_key: "no-key-needed"
+
+      - model_name: smart-router
+        litellm_params:
+          model: auto_router/complexity_router
+          drop_params: true
+          complexity_router_config:
+            tiers:
+              SIMPLE: glm-4
+              MEDIUM: glm-4
+              COMPLEX: qwen2.5-14b
+              REASONING: qwen2.5-14b
+            complexity_router_default_model: glm-4
+            keyword_tier_rules:
+              - keywords: ["hi", "hello", "thanks", "thank you", "bye"]
+                tier: SIMPLE
+              - keywords: ["translate", "翻译", "中文"]
+                tier: SIMPLE
+              - keywords: ["code", "function", "class", "algorithm", "debug", "refactor"]
+                tier: COMPLEX
+              - keywords: ["python", "javascript", "typescript", "java", "rust", "sql"]
+                tier: COMPLEX
+              - keywords: ["step by step", "analyze", "compare", "explain in detail"]
+                tier: REASONING
+              - keywords: ["architecture", "design pattern", "system design"]
+                tier: REASONING
+              - keywords: ["prove", "derive", "calculate", "equation"]
+                tier: REASONING
+            session_affinity: true
+            session_affinity_ttl_seconds: 3600
+
+    general_settings:
+      master_key: "sk-glmchat-litellm-internal"
+
+    litellm_settings:
+      drop_params: true
+      set_verbose: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: glm-chat
+  labels:
+    app: litellm-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app: litellm-proxy
+    spec:
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-stable
+          command: ["litellm"]
+          args:
+            - "--config"
+            - "/app/config.yaml"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "4000"
+          ports:
+            - containerPort: 4000
+              name: http
+          env:
+            - name: LITELLM_MASTER_KEY
+              value: "sk-glmchat-litellm-internal"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "1Gi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            failureThreshold: 5
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-proxy
+  namespace: glm-chat
+spec:
+  selector:
+    app: litellm-proxy
+  ports:
+    - port: 4000
+      targetPort: 4000
+      protocol: TCP
+  type: ClusterIP

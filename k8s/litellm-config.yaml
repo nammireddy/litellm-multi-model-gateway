@@ -1,0 +1,48 @@
+model_list:
+  - model_name: glm-4
+    litellm_params:
+      model: openai/THUDM/glm-4-9b-chat
+      api_base: http://inference-service:8000/v1
+      api_key: "no-key-needed"
+
+  - model_name: qwen2.5-14b
+    litellm_params:
+      model: openai/Qwen/Qwen2.5-14B-Instruct-AWQ
+      api_base: http://qwen3-service:8000/v1
+      api_key: "no-key-needed"
+
+  - model_name: smart-router
+    litellm_params:
+      model: auto_router/complexity_router
+      drop_params: true
+      complexity_router_config:
+        tiers:
+          SIMPLE: glm-4
+          MEDIUM: glm-4
+          COMPLEX: qwen2.5-14b
+          REASONING: qwen2.5-14b
+        complexity_router_default_model: glm-4
+        keyword_tier_rules:
+          - keywords: ["hi", "hello", "thanks", "thank you", "bye"]
+            tier: SIMPLE
+          - keywords: ["translate", "翻译", "中文"]
+            tier: SIMPLE
+          - keywords: ["code", "function", "class", "algorithm", "debug", "refactor"]
+            tier: COMPLEX
+          - keywords: ["python", "javascript", "typescript", "java", "rust", "sql"]
+            tier: COMPLEX
+          - keywords: ["step by step", "analyze", "compare", "explain in detail"]
+            tier: REASONING
+          - keywords: ["architecture", "design pattern", "system design"]
+            tier: REASONING
+          - keywords: ["prove", "derive", "calculate", "equation"]
+            tier: REASONING
+        session_affinity: true
+        session_affinity_ttl_seconds: 3600
+
+general_settings:
+  master_key: "sk-glmchat-litellm-internal"
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false
